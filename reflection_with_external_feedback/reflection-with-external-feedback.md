@@ -7,7 +7,7 @@ In this post, I’ll show a **small, reproducible experiment** that demonstrates
 
 > 👉 *Reflection combined with external feedback dramatically improves LLM accuracy compared to pure prompting.*
 
-We’ll compare:
+We compare:
 - ❌ LLM without reflection (pure prompting)
 - ✅ LLM with reflection + external verification
 
@@ -23,13 +23,11 @@ We ask the LLM:
 This is intentionally simple, yet it exposes typical LLM failure modes:
 - Off-by-one errors  
 - Incorrect sorting  
-- Failure on edge cases (`k > len(array)`)
+- Failure on edge cases (`k > len(array)`)  
 
 ---
 
 ## 🧪 Baseline: LLM Without Reflection (Pure Prompting)
-
-We first query the LLM directly and trust its output.
 
 ```python
 PROMPT_TEMPLATE = """
@@ -40,24 +38,17 @@ Array: {nums}
 K: {k}"""
 ```
 
-### ❌ Observed Behaviour
+**Observed behaviour:**
+- Sometimes correct
+- Often fails on edge cases
 
-- The model is often correct  
-- But it fails on:
-  - Edge cases  
-  - Invalid `k` values  
-  - Indexing mistakes  
-
-**Observed accuracy: ~50%**
-
-This highlights a core limitation:
-> LLMs are probabilistic text generators, not deterministic reasoning engines.
+Accuracy observed: **~50%**
 
 ---
 
 ## 🔁 Adding Reflection with External Feedback
 
-We introduce **reflection with a verifier**.
+We introduce a deterministic verifier:
 
 ```python
 def check_kth_largest_element(nums_array: list[int], k: int, llm_response: KthLargestElement) -> bool:
@@ -66,16 +57,12 @@ def check_kth_largest_element(nums_array: list[int], k: int, llm_response: KthLa
     return k_th_largest_element == llm_response.kth_largest_element
 ```
 
-This function acts as:
-> ✅ A ground-truth oracle
-
-The model no longer gets to be “confident and wrong”.
+This function acts as a **ground-truth oracle**.  
+The model is no longer trusted blindly.
 
 ---
 
 ## 🪞 Reflection Prompt
-
-When the model is wrong, we reflect the failure back into the next prompt:
 
 ```python
 def make_prefix_prompt(previous_output: KthLargestElement) -> str:
@@ -85,7 +72,7 @@ def make_prefix_prompt(previous_output: KthLargestElement) -> str:
     """
 ```
 
-This turns the LLM into a **self-correcting loop**:
+This enables a simple loop:
 
 1. Generate answer  
 2. Verify externally  
@@ -98,12 +85,16 @@ This is the core of **agentic behaviour**.
 
 ## 📊 Results
 
+Below is the accuracy comparison from the experiment:
+
+![Accuracy comparison: without reflection vs with reflection](accuracy_comparison.png)
+
 | Setup              | Accuracy |
 |--------------------|----------|
 | Without reflection | 50%      |
 | With reflection    | 100%     |
 
-Reflection + feedback **doubles accuracy** by closing the loop between the model and the environment.
+Reflection + external feedback **doubles accuracy** by closing the loop between the model and the environment.
 
 ---
 
@@ -112,12 +103,11 @@ Reflection + feedback **doubles accuracy** by closing the loop between the model
 Pure prompting:
 - No notion of correctness  
 - No learning from failure  
-- No grounding in reality  
 
 Reflection + external feedback:
-- Introduces a verifier (critic)  
-- Allows iterative improvement  
-- Enables self-correction  
+- Adds a verifier (critic)  
+- Enables iterative improvement  
+- Produces more reliable outputs  
 
 This mirrors how humans solve problems:
 > Try → Check → Reflect → Fix
@@ -129,34 +119,12 @@ This mirrors how humans solve problems:
 This tiny example is the foundation of:
 - ReAct agents  
 - Tool-using LLMs  
-- Self-healing pipelines  
-- Critic / Verifier architectures  
-- Production-grade AI agents  
-
-In real systems, the verifier might be:
-
-| Domain  | External Feedback |
-|--------|-------------------|
-| Code   | Unit tests        |
-| SQL    | Query execution   |
-| APIs   | Response schemas  |
-| Finance| Accounting rules  |
-| RAG    | Source grounding  |
-
----
-
-## 🔑 Key Takeaway
-
-> Reflection without feedback is weak.  
-> Reflection with **external verification** is powerful.
-
-This is the difference between prompting and **engineering reliable LLM systems**.
+- Self-correcting pipelines  
+- Critic/Verifier architectures  
 
 ---
 
 ## 🧩 Full Reproducible Code
-
-> Run this end-to-end to reproduce the results (Ollama + LangChain required).
 
 ```python
 import warnings
@@ -174,20 +142,17 @@ class KthLargestElement(BaseModel):
 
 load_dotenv()
 
-SEED = 42  # set for reproducible outputs
+SEED = 42
 openai_model = "llama3:8b"
-llm = ChatOllama(
-    model=openai_model,
-    seed=SEED,
-).with_structured_output(KthLargestElement)
+llm = ChatOllama(model=openai_model, seed=SEED).with_structured_output(KthLargestElement)
 
-test_set: list[dict[str, int|list[int]]] = [
+test_set = [
     {"nums": [3, 2, 1, 5, 6, 4], "k": 3, "expected": 4},
     {"nums": [3, 2, 1, 5, 6, 4], "k": 6, "expected": 1},
     {"nums": [3, 2, 1, 5, 6, 4], "k": 7, "expected": -1},
-    {"nums": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "k": 1, "expected": 10},
-    {"nums": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "k": 10, "expected": 1},
-    {"nums": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "k": 11, "expected": -1},
+    {"nums": [1,2,3,4,5,6,7,8,9,10], "k": 1, "expected": 10},
+    {"nums": [1,2,3,4,5,6,7,8,9,10], "k": 10, "expected": 1},
+    {"nums": [1,2,3,4,5,6,7,8,9,10], "k": 11, "expected": -1},
 ]
 
 PROMPT_TEMPLATE = """
@@ -196,81 +161,4 @@ Given a list of integers and a number k, return the kth largest element in the a
 If it's not possible to find the kth largest element, return -1.
 Array: {nums}
 K: {k}"""
-
-print("==== Without reflection ====")
-correct_count = 0
-for i, case in enumerate(test_set):
-    nums, k, expected = case["nums"], case["k"], case["expected"]
-    prompt: str = PROMPT_TEMPLATE.format(prefix="", nums=nums, k=k)
-    result = llm.invoke([
-        HumanMessage(content=prompt),
-    ])
-    result = cast(KthLargestElement, result)
-    ok = result.kth_largest_element == expected
-    if ok:
-        correct_count += 1
-    status = "✅" if ok else "❌"
-    print(f"{status} case {i + 1}: nums={nums}, k={k} -> got {result.kth_largest_element}, expected {expected}")
-
-accuracy_without = 100 * correct_count / len(test_set)
-print(f"\nAccuracy: {correct_count}/{len(test_set)} ({accuracy_without:.0f}%)")
-
-print("==== With reflection ====")
-def check_kth_largest_element(nums_array: list[int], k: int, llm_response: KthLargestElement) -> bool:
-    sorted_nums = sorted(nums_array, reverse=True)
-    k_th_largest_element = sorted_nums[k - 1] if 1 <= k <= len(sorted_nums) else -1
-    return k_th_largest_element == llm_response.kth_largest_element
-
-def make_prefix_prompt(previous_output: KthLargestElement) -> str:
-    return f"""
-    Your previous output was incorrect. Try again.
-    Previous output: {previous_output.kth_largest_element}
-    """
-
-correct_count = 0
-for i, case in enumerate(test_set):
-    nums, k, expected = case["nums"], case["k"], case["expected"]
-    prompt = PROMPT_TEMPLATE.format(prefix="", nums=nums, k=k)
-    result = llm.invoke([
-        HumanMessage(content=prompt),
-    ])
-    result = cast(KthLargestElement, result)
-    ok: bool = check_kth_largest_element(nums_array=nums, k=k, llm_response=result)
-    if not ok:
-        attempts: int = 0
-        MAX_ATTEMPTS: int = 3
-        while not ok and attempts < MAX_ATTEMPTS:
-            print(f"Attempt {attempts + 1} of {MAX_ATTEMPTS} failed. Retrying...")
-            result = cast(KthLargestElement, llm.invoke([
-                HumanMessage(content=PROMPT_TEMPLATE.format(prefix=make_prefix_prompt(result), nums=nums, k=k)),
-            ]))
-            ok = check_kth_largest_element(nums_array=nums, k=k, llm_response=result)
-            attempts += 1
-    if ok:
-        correct_count += 1
-    status = "✅" if ok else "❌"
-    print(f"{status} case {i + 1}: nums={nums}, k={k} -> got {result.kth_largest_element}, expected {expected}")
-
-accuracy_with = 100 * correct_count / len(test_set)
-print(f"\nAccuracy: {correct_count}/{len(test_set)} ({accuracy_with:.0f}%)")
-
-fig, ax = plt.subplots(figsize=(6, 4))
-labels = ["Without reflection", "With reflection"]
-accuracies = [accuracy_without, accuracy_with]
-bars = ax.bar(labels, accuracies, edgecolor="black", linewidth=1.2)
-ax.set_ylabel("Accuracy (%)")
-ax.set_ylim(0, 105)
-for bar, acc in zip(bars, accuracies):
-    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 2, f"{acc:.0f}%", ha="center", fontweight="bold")
-plt.tight_layout(rect=(0, 0, 1, 0.92))
-plt.savefig("accuracy_comparison.png", dpi=150)
-plt.show()
 ```
-
----
-
-## 🔗 Repo
-
-https://github.com/abhijeetscode/Blogs
-
-If you found this useful, feel free to star ⭐ the repo and share the post.
