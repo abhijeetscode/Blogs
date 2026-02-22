@@ -1,88 +1,96 @@
+# 🧠 Reflection with External Feedback: Why LLMs Get Smarter When They Can Check Themselves
 
-📊 What this blog shows:
-- LLM accuracy **doubles** when reflection is combined with external verification
-- Pure prompting vs reflection + feedback
-- A minimal reproducible experiment using:
-  - LangChain
-  - Ollama (llama3)
-  - Pydantic structured outputs
-  - Deterministic verifier function
+Large Language Models (LLMs) are powerful, but they are not reliable reasoners by default.  
+They often produce answers that *sound confident but are wrong*, especially for tasks involving logic, constraints, or edge cases.
 
-📈 Result snapshot:
+In this post, I’ll show a **small, reproducible experiment** that demonstrates why:
+
+> 👉 *Reflection combined with external feedback dramatically improves LLM accuracy compared to pure prompting.*
+
+We’ll compare:
+- ❌ LLM without reflection (pure prompting)
+- ✅ LLM with reflection + external verification
+
+---
+
+## 🎯 Problem Setup: Kth Largest Element
+
+We ask the LLM:
+
+> Given a list of integers and a number `k`, return the kth largest element in the array.  
+> If it's not possible to find the kth largest element, return `-1`.
+
+This is intentionally simple, yet it exposes typical LLM failure modes:
+- Off-by-one errors  
+- Incorrect sorting  
+- Failure on edge cases (`k > len(array)`)
+
+---
+
+## 🧪 Baseline: LLM Without Reflection (Pure Prompting)
+
+We first query the LLM directly and trust its output.
+
+```python
+PROMPT_TEMPLATE = """
+{prefix}
+Given a list of integers and a number k, return the kth largest element in the array.
+If it's not possible to find the kth largest element, return -1.
+Array: {nums}
+K: {k}"""
+```
+
+### ❌ Observed Behaviour
+
+- The model is often correct  
+- But it fails on edge cases and invalid `k` values  
+
+**Observed accuracy: ~50%**
+
+---
+
+## 🔁 Adding Reflection with External Feedback
+
+We introduce **reflection with a verifier**.
+
+```python
+def check_kth_largest_element(nums_array: list[int], k: int, llm_response: KthLargestElement) -> bool:
+    sorted_nums = sorted(nums_array, reverse=True)
+    k_th_largest_element = sorted_nums[k - 1] if 1 <= k <= len(sorted_nums) else -1
+    return k_th_largest_element == llm_response.kth_largest_element
+```
+
+This function acts as:
+> ✅ A ground-truth oracle
+
+---
+
+## 🪞 Reflection Prompt
+
+```python
+def make_prefix_prompt(previous_output: KthLargestElement) -> str:
+    return f"""
+    Your previous output was incorrect. Try again.
+    Previous output: {previous_output.kth_largest_element}
+    """
+```
+
+This turns the LLM into a **self-correcting loop**.
+
+---
+
+## 📊 Results
 
 | Setup              | Accuracy |
 |--------------------|----------|
 | Without reflection | 50%      |
 | With reflection    | 100%     |
 
-This demonstrates why **reflection with external feedback** is a core building block for:
-- AI agents
-- Tool-using LLMs
-- Self-correcting pipelines
-- Production-grade LLM systems
-
 ---
 
-## 📦 Code Used in the Blog
+## 🔑 Key Takeaway
 
-The experiment uses:
+> Reflection without feedback is weak.  
+> Reflection with **external verification** is powerful.
 
-- `ChatOllama` (local LLM)
-- Structured output validation with Pydantic
-- External verification function
-- Reflection loop with retries
-- Matplotlib for result visualization
-
-You can find the full runnable code inside the blog post.
-
----
-
-## 🧩 Why This Repo Exists
-
-Most LLM content online is:
-- Prompt-only
-- Theoretical
-- Demo-heavy but reliability-light
-
-This repo focuses on:
-> **How to make LLM systems actually reliable in production.**
-
-Core themes:
-- Reflection
-- Verification
-- Agentic patterns
-- Tool feedback loops
-- Failure-aware design
-
----
-
-## 🚀 Upcoming Blogs (Planned)
-
-- Reflection vs ReAct vs Tool Calling vs Critic Models
-- Building a self-correcting agent with LangGraph
-- Why LLM routing needs verification signals
-- How to design verifiers for production AI systems
-- Agent failure modes in real-world pipelines
-
----
-
-## 🤝 Contributions & Feedback
-
-This repo is a living notebook of experiments and ideas.  
-Feedback, issues, and discussions are welcome.
-
-If you found this useful, feel free to star ⭐ the repo or share the blog!
-
----
-
-## 🔗 Links
-
-- Blog Website: (add your link)
-- LinkedIn: (add your LinkedIn)
-- GitHub: (this repo)
-
----
-
-## 📝 License
-
-MIT
+This is the difference between prompting and **engineering reliable LLM systems**.
